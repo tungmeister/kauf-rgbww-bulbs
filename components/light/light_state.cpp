@@ -94,14 +94,6 @@ void LightState::restore_with_mode(uint32_t transition_length) {
       break;
   }
 
-  // A light coming up on boot must never end up on-but-invisible: if the resolved restore
-  // state is on but its brightness is zero (e.g. a stale/persisted value from before a
-  // forced-on restore mode, or an inverted restore flipping a dim-to-0 off state to on),
-  // reset it to full brightness.
-  if (recovered.state && recovered.brightness == 0.0f) {
-    recovered.brightness = 1.0f;
-  }
-
   // KAUF: default unknown startup mode to CT.
   auto traits = this->get_traits();
   if (recovered.color_mode == ColorMode::UNKNOWN) {
@@ -279,6 +271,7 @@ void LightState::wled_apply() {
     char ip_str[network::IP_ADDRESS_BUFFER_SIZE];
     addr.str_to(ip_str);
     uint8_t addr4 = (uint8_t)atoi(strrchr(ip_str, '.') + 1);
+    char next_ip[network::IP_ADDRESS_BUFFER_SIZE];
 
     if ( addr4 >= 254 ) {
       ESP_LOGE("KAUF WLED", "DDP chaining force stopped at address *.254");
@@ -287,6 +280,7 @@ void LightState::wled_apply() {
 
     // increment address so its on the next pixel (first forwarded pixel)
     addr += 1;
+    addr.str_to(next_ip);
 
     // forward remaining ddp data.  split into 2 packets if more than one pixel to forward.
     // payload size - 13 gives you total number of data bytes to forward (after subtracting header and first pixel)
@@ -300,7 +294,7 @@ void LightState::wled_apply() {
     // send first packet
     WiFiUDP udp2;
 
-    if (!udp2.beginPacket(ip_str, 4048)) {
+    if (!udp2.beginPacket(next_ip, 4048)) {
       ESP_LOGE("KAUF WLED", "Error beginning first DDP packet!");
       return;
     }
@@ -331,13 +325,10 @@ void LightState::wled_apply() {
       return;
     }
 
-    if ( addr4 + packet1_length + 1 >= 255 ) {
-      return;
-    } else {
-      addr += packet1_length;
-    }
+    addr += packet1_length;
+    addr.str_to(next_ip);
 
-    if (!udp2.beginPacket(ip_str, 4048)) {
+    if (!udp2.beginPacket(next_ip, 4048)) {
       ESP_LOGE("KAUF WLED", "Error beginning second DDP packet!");
       return;
     }
